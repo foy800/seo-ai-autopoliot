@@ -13,5 +13,11 @@
   "cta_contact": "телефон +7 (000) 000-00-00",
   "humanize_pass": true,
   "author": "",
-  "publish_hook": ""
+  "publish_mode": "ftp",
+  "site_name": "Название сайта",
+  "blog_path": "blog",
+  "blog_title": "Статьи",
+  "blog_description": "Полезные статьи",
+  "ftp_dir": "/public_html",
+  "update_blog_index": true
 }

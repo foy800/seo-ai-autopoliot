@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{title}}</title>
+<meta name="description" content="{{description}}">
+<link rel="canonical" href="{{canonical}}">
+<meta property="og:type" content="article">
+<meta property="og:title" content="{{title}}">
+<meta property="og:description" content="{{description}}">
+<meta property="og:url" content="{{canonical}}">
+<meta property="og:image" content="{{image_url}}">
+<meta property="og:site_name" content="{{site_name}}">
+<script type="application/ld+json">{{jsonld}}</script>
+<style>
+  body{font:18px/1.65 system-ui,Arial,sans-serif;color:#222;margin:0}
+  main{max-width:760px;margin:0 auto;padding:24px 16px 64px}
+  h1{font-size:2rem;line-height:1.25} h2{margin-top:2rem}
+  img.cover{max-width:100%;height:auto;border-radius:8px}
+  table{border-collapse:collapse;width:100%;margin:1rem 0}
+  th,td{border:1px solid #ccc;padding:8px 10px;text-align:left} th{background:#f3f3f3}
+  .author{color:#666;font-size:.95rem} a{color:#0a58ca}
+  .posts{list-style:none;padding:0} .posts li{margin:0 0 1.5rem}
+</style>
+</head>
+<body>
+<!-- Замените шапку и подвал на разметку вашего сайта, чтобы страницы совпадали по дизайну.
+     Метки {{...}} менять нельзя: в них подставляются данные статьи. -->
+<header style="padding:16px;border-bottom:1px solid #eee"><a href="/">{{site_name}}</a></header>
+<main>
+{{content}}
+</main>
+<footer style="padding:16px;border-top:1px solid #eee;color:#777">{{site_name}}</footer>
+</body>
+</html>

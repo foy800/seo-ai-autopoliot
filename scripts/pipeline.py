@@ -214,7 +214,18 @@ def deliver(row, cfg, raw, meta, writer, slug):
 
 
 def release(cfg, keyword, md_path, img_path, slug, date, meta):
-    """Публикует статью через publish_hook. Нет хука: статус ready."""
+    """Публикует статью: на сайт без CMS (publish_mode local/ftp) или через publish_hook.
+    Не вышло или способ не задан: статус ready, публикация повторится при следующем запуске."""
+    mode = (cfg.get("publish_mode") or "").strip().lower()
+    if mode in ("local", "ftp"):
+        from publish_static import publish
+        try:
+            url = publish(cfg, md_path, img_path, slug, date, meta)
+        except Exception as e:
+            log({"event": "publish_failed", "keyword": keyword, "mode": mode, "error": str(e)[:300]})
+            return "ready"
+        log({"event": "site_published", "keyword": keyword, "mode": mode, "url": url})
+        return "published"
     hook = cfg.get("publish_hook", "").strip()
     if not hook:
         return "ready"
@@ -224,6 +235,23 @@ def release(cfg, keyword, md_path, img_path, slug, date, meta):
     r = subprocess.run(hook, shell=True, env=env, cwd=ROOT, capture_output=True, text=True, timeout=300)
     log({"event": "publish_hook", "keyword": keyword, "code": r.returncode, "stderr": r.stderr[-300:]})
     return "published" if r.returncode == 0 else "ready"
+
+
+def retry_unpublished(cfg, rows, qpath):
+    """Повторяет публикацию статей со статусом ready (например, после сбоя FTP)."""
+    if (cfg.get("publish_mode") or "").strip().lower() not in ("local", "ftp") and not cfg.get("publish_hook"):
+        return
+    for row in rows:
+        if row["status"] != "ready" or not row["slug"]:
+            continue
+        date = row["date"] or dt.date.today().isoformat()
+        md_path = os.path.join(abspath(cfg["out_dir"]), f"{date}-{row['slug']}.md")
+        if not os.path.exists(md_path):
+            continue
+        meta, _ = parse_article(open(md_path, encoding="utf-8").read())
+        row["status"] = release(cfg, row["keyword"], md_path, md_path[:-3] + ".png", row["slug"], date, meta)
+        write_queue(qpath, rows)
+        print(f"[повтор публикации: {row['status']}] {row['keyword']}")
 
 
 def main():
@@ -241,6 +269,8 @@ def main():
     if not rows:
         print(f"Очередь пуста или не найдена: {qpath}", file=sys.stderr)
         return 1
+
+    retry_unpublished(cfg, rows, qpath)
 
     limit = cfg["daily_limit"] - done_today(rows)
     n = min(a.count if a.count is not None else limit, limit)

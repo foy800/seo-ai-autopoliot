@@ -1,35 +1,59 @@
 # seo-agent-ru
 
-Универсальный автономный SEO-агент под Яндекс: 3 статьи в день, ключи в заголовке
-и тексте, перелинковка, таблицы, врезки, CTA в конце, обложка без текста через
-OpenAI, чистка от ИИ-слопа. Подходит для любой тематики. Основан на
-[claude-yandex-seo](https://github.com/rdsolod-ui/claude-yandex-seo) и
-[humanizer-ru](https://github.com/ilyautov/humanizer-ru), оба под лицензией MIT.
+Универсальный автономный SEO-агент под Яндекс. Каждый день пишет 3 статьи по очереди
+ключей: ключи в заголовке и тексте, перелинковка, таблицы, врезки, CTA в конце,
+обложка без текста через OpenAI, чистка от ИИ-слопа. Публикует статьи на обычный сайт
+без CMS по FTP. Подходит для любой тематики.
 
-Нужен только Python 3.9+, внешних пакетов нет.
+## Установка на сервер
 
-## Установка
+```bash
+git clone https://github.com/foy800/seo-ai-autopoliot.git ~/seo-agent-ru && cd ~/seo-agent-ru && bash install.sh
+```
 
-1. Скопируйте папку на сервер, например в `/opt/seo-agent-ru`.
-   Для Claude Code положите её в `~/.claude/skills/seo-agent-ru`.
-2. Настройки:
-   ```bash
-   cp templates/config.example.json config.json
-   cp templates/.env.example .env && chmod 600 .env
-   cp templates/queue.example.csv state/queue.csv
-   mkdir -p context
-   cp templates/pages.example.csv context/pages.csv
-   cp templates/facts.example.md context/facts.md
-   ```
-3. Впишите **свой ключ OpenAI в `.env`** (строка `OPENAI_API_KEY=`) прямо на
-   сервере. В чат и в репозиторий ключ не отправляйте. Модели меняются
-   переменными `OPENAI_TEXT_MODEL` и `OPENAI_IMAGE_MODEL`, актуальные названия
-   смотрите в документации OpenAI.
-4. Заполните `config.json` (адрес сайта, `cta_url`, автор), `context/pages.csv`
-   (страницы для перелинковки) и `context/facts.md` (единственный источник
-   цен, имён и сроков).
-5. Проверьте ключ: `python3 scripts/openai_client.py check`.
-6. Пробный прогон без ключа и без сети: `python3 scripts/pipeline.py --mock`.
+Скрипт создаёт `config.json`, `.env` и рабочие файлы из шаблонов. Нужен только Python 3.9+,
+внешних пакетов нет. Чтобы сразу включить ежедневный запуск в 07:00:
+
+```bash
+bash install.sh --cron
+```
+
+Обновление: `cd ~/seo-agent-ru && git pull`. Ваши `config.json`, `.env`, очередь и
+логи остаются на месте, в репозиторий они не попадают.
+
+## Добавить в Claude
+
+Claude Code (macOS, Linux):
+
+```bash
+git clone https://github.com/foy800/seo-ai-autopoliot.git ~/.claude/skills/seo-agent-ru
+```
+
+Claude Code (Windows, PowerShell):
+
+```powershell
+git clone https://github.com/foy800/seo-ai-autopoliot.git "$env:USERPROFILE\.claude\skills\seo-agent-ru"
+```
+
+Перезапустите Claude Code и скажите: «запусти SEO-агента» или «напиши SEO-статью».
+Скилл подхватится автоматически. Обновление: `git pull` в той же папке.
+
+Для проекта, а не для всех: клонируйте в `.claude/skills/seo-agent-ru` внутри папки проекта.
+
+## Настройка
+
+1. **Ключ OpenAI и FTP** впишите в `.env` на сервере (`nano .env`):
+   `OPENAI_API_KEY`, `FTP_HOST`, `FTP_USER`, `FTP_PASS`. В чат и в репозиторий их
+   не отправляйте. Модели меняются переменными `OPENAI_TEXT_MODEL` и
+   `OPENAI_IMAGE_MODEL`, актуальные названия смотрите в документации OpenAI.
+2. **`config.json`:** `site_url`, `site_name`, `cta_url` (страница услуги для CTA),
+   `ftp_dir` (папка сайта на сервере, например `/domain.ru/public_html`), автор.
+3. **`context/pages.csv`:** страницы сайта для перелинковки.
+4. **`context/facts.md`:** единственный источник цен, имён и сроков.
+5. **`state/queue.csv`:** очередь запросов.
+6. Проверка ключа: `python3 scripts/openai_client.py check`.
+7. Пробный прогон без ключа и без сети: `python3 scripts/pipeline.py --mock`
+   (при `publish_mode: "ftp"` без FTP статья получит статус `ready`, это нормально).
 
 ## Запуск
 
@@ -38,22 +62,17 @@ python3 scripts/pipeline.py            # до daily_limit статей за се
 python3 scripts/pipeline.py --count 1  # одна статья
 ```
 
-По cron каждый день в 07:00:
-
-```
-0 7 * * * cd /opt/seo-agent-ru && /usr/bin/python3 scripts/pipeline.py >> state/cron.log 2>&1
-```
-
 Повторный запуск в тот же день лимит не превысит.
 
 ## Как это работает
 
 Очередь `state/queue.csv` → генерация → `article_check.py` → до 3 переделок по
 списку ошибок → вычитка и корректура (числа не должны меняться, иначе вычитка
-отклоняется) → обложка → выдача.
+отклоняется) → обложка → публикация на сайт.
 
-Статусы очереди: `new`, `ready` (готово, хука публикации нет), `published`,
-`failed` (причина в колонке `note`).
+Статусы очереди: `new`, `ready` (готово, но не опубликовано: сбой FTP или нет доступа),
+`published`, `failed` (причина в колонке `note`). Статьи со статусом `ready`
+публикуются повторно при следующем запуске.
 
 ## Очередь (задание на статью)
 
@@ -61,21 +80,25 @@ python3 scripts/pipeline.py --count 1  # одна статья
 запятую), `lsi` (LSI-слова), `kind` (`info` или `commercial`), `max_chars` (лимит
 для коммерческого текста), `topic`, `priority`, `status`.
 
-## Word
+## Публикация на сайт без CMS
 
-```bash
-pip install python-docx
-python3 scripts/to_docx.py out/2026-09-30-slug.md
-```
+При `publish_mode: "ftp"` для каждой статьи создаются:
 
-Собирает .docx с заголовками, жирными врезками, списками, таблицей и обложкой.
+- страница `/blog/<slug>/index.html` с разметкой Article, canonical и Open Graph;
+- обложка `/blog/<slug>/cover.png`;
+- список статей `/blog/index.html` (отключается `update_blog_index: false`);
+- карта `/blog/sitemap-blog.xml`.
 
-## Публикация
+Файлы заливаются по FTP в `ftp_dir`. Режим `"local"` только собирает файлы в `out/site`
+без загрузки. После первой публикации добавьте `sitemap-blog.xml` в Яндекс.Вебмастер и в
+`robots.txt`. Оформление страниц берётся из `templates/page.template.html`: замените шапку и
+подвал на разметку вашего сайта, метки `{{...}}` не трогайте. Ссылки на блог в меню сайта
+добавьте вручную один раз.
 
-Скилл не знает вашу CMS или структуру сайта. В `config.json` укажите `publish_hook`:
-команду, которую агент вызовет после успешной проверки. Ей доступны переменные
-`ARTICLE_MD`, `ARTICLE_IMAGE`, `ARTICLE_SLUG`, `ARTICLE_TITLE`,
-`ARTICLE_DESCRIPTION`, `ARTICLE_IMAGE_ALT`. Пока хука нет, готовые файлы лежат в `out/`.
+Если публикацию нужно делать другим способом, укажите в конфиге `publish_hook`:
+команду, которой доступны `ARTICLE_MD`, `ARTICLE_IMAGE`, `ARTICLE_SLUG`,
+`ARTICLE_TITLE`, `ARTICLE_DESCRIPTION`, `ARTICLE_IMAGE_ALT`. Она работает, когда
+`publish_mode` не задан.
 
 ## Проверка вручную
 
@@ -93,7 +116,14 @@ python3 scripts/article_check.py out/файл.md --keyword "основной к�
   не засчитаться.
 - Орфография проверяется по списку типичных ошибок, остальное закрывает корректура
   в вычитке.
+- FTP без шифрования передаёт пароль открытым текстом: если сервер поддерживает FTPS,
+  поставьте `FTP_TLS=1`.
 - Для второго прохода слопа можно поставить полный
   [humanizer-ru](https://github.com/ilyautov/humanizer-ru) и запускать его
   `scan.py` по файлам из `out/`.
 - Точных частот запросов скилл не собирает, очередь заполняется вручную.
+
+## Лицензия и источники
+
+MIT. Идеи и правила из [claude-yandex-seo](https://github.com/rdsolod-ui/claude-yandex-seo)
+и [humanizer-ru](https://github.com/ilyautov/humanizer-ru), подробности в `NOTICE.md`.
