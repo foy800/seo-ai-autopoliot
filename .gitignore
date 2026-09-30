@@ -1,0 +1,11 @@
+.env
+config.json
+state/queue.csv
+state/log.jsonl
+state/cron.log
+context/pages.csv
+context/facts.md
+out/*
+!out/.gitkeep
+__pycache__/
+*.pyc

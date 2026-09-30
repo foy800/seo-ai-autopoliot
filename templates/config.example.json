@@ -1,0 +1,17 @@
+{
+  "site_url": "https://example.ru",
+  "region": "Россия",
+  "daily_limit": 3,
+  "min_chars": 2000,
+  "target_chars": 3500,
+  "min_internal_links": 2,
+  "max_internal_links": 6,
+  "description_min": 160,
+  "description_max": 200,
+  "description_emojis": [],
+  "cta_url": "https://example.ru/uslugi/zakazat",
+  "cta_contact": "телефон +7 (000) 000-00-00",
+  "humanize_pass": true,
+  "author": "",
+  "publish_hook": ""
+}
