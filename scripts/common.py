@@ -62,10 +62,27 @@ def load_env(path=None):
 
 def load_config(path=None):
     path = path or os.path.join(ROOT, "config.json")
+    load_env()
     cfg = dict(DEFAULT_CONFIG)
     if os.path.exists(path):
         with open(path, encoding="utf-8") as f:
             cfg.update(json.load(f))
+    # Переменные SEO_<ПАРАМЕТР> из .env или окружения перекрывают config.json
+    for key, default in DEFAULT_CONFIG.items():
+        raw = os.environ.get("SEO_" + key.upper())
+        if raw is None or raw.strip() == "":
+            continue
+        raw = raw.strip()
+        if isinstance(default, bool):
+            cfg[key] = raw.lower() in ("1", "true", "yes", "да")
+        elif isinstance(default, int):
+            cfg[key] = int(raw)
+        elif isinstance(default, float):
+            cfg[key] = float(raw)
+        elif isinstance(default, list):
+            cfg[key] = [x.strip() for x in raw.split(",") if x.strip()]
+        else:
+            cfg[key] = raw
     return cfg
 
 

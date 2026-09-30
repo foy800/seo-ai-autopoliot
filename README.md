@@ -42,18 +42,33 @@ git clone https://github.com/foy800/seo-ai-autopoliot.git "$env:USERPROFILE\.cla
 
 ## Настройка
 
-1. **Ключ OpenAI и FTP** впишите в `.env` на сервере (`nano .env`):
-   `OPENAI_API_KEY`, `FTP_HOST`, `FTP_USER`, `FTP_PASS`. В чат и в репозиторий их
-   не отправляйте. Модели меняются переменными `OPENAI_TEXT_MODEL` и
-   `OPENAI_IMAGE_MODEL`, актуальные названия смотрите в документации OpenAI.
-2. **`config.json`:** `site_url`, `site_name`, `cta_url` (страница услуги для CTA),
-   `ftp_dir` (папка сайта на сервере, например `/domain.ru/public_html`), автор.
-3. **`context/pages.csv`:** страницы сайта для перелинковки.
-4. **`context/facts.md`:** единственный источник цен, имён и сроков.
-5. **`state/queue.csv`:** очередь запросов.
-6. Проверка ключа: `python3 scripts/openai_client.py check`.
-7. Пробный прогон без ключа и без сети: `python3 scripts/pipeline.py --mock`
-   (при `publish_mode: "ftp"` без FTP статья получит статус `ready`, это нормально).
+Все секреты и параметры лежат в одном файле **`.env`** (шаблон `templates/.env.example`,
+установщик копирует его сам). Откройте и заполните:
+
+```bash
+nano .env
+```
+
+- **Секреты:** `OPENAI_API_KEY`, `FTP_HOST`, `FTP_USER`, `FTP_PASS`. В чат и в репозиторий
+  их не отправляйте.
+- **Сайт:** `SEO_SITE_URL`, `SEO_SITE_NAME`, `SEO_CTA_URL` (страница услуги для CTA),
+  `SEO_CTA_CONTACT`, `SEO_FTP_DIR` (папка сайта на сервере, например `/domain.ru/public_html`).
+- **Объём и качество:** `SEO_DAILY_LIMIT`, `SEO_MIN_CHARS`, лимиты ссылок и ключей.
+  Каждая переменная `SEO_<ПАРАМЕТР>` перекрывает одноимённое значение в `config.json`.
+  Пустая строка означает «взять из `config.json` или значение по умолчанию».
+- Модели OpenAI меняются переменными `OPENAI_TEXT_MODEL` и `OPENAI_IMAGE_MODEL`,
+  актуальные названия смотрите в документации OpenAI.
+
+Остальные файлы:
+
+1. **`context/pages.csv`:** страницы сайта для перелинковки.
+2. **`context/facts.md`:** единственный источник цен, имён и сроков.
+3. **`state/queue.csv`:** очередь запросов.
+4. Проверка ключа: `python3 scripts/openai_client.py check`.
+5. Пробный прогон без ключа и без сети: `python3 scripts/pipeline.py --mock`
+   (при `SEO_PUBLISH_MODE=ftp` без FTP статья получит статус `ready`, это нормально).
+
+`config.json` можно не править: он нужен, только если вы хотите держать параметры не в `.env`.
 
 ## Запуск
 
