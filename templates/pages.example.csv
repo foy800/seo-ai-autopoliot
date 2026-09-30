@@ -1,5 +1,5 @@
-url,title,keywords
-https://example.ru/uslugi/sertifikaciya,Сертификация,сертификат гост р соответствие
-https://example.ru/uslugi/deklaraciya,Декларирование,декларация соответствие тр тс
-https://example.ru/uslugi/tu,Разработка ТУ,технические условия ту пищевая продукция
-https://example.ru/uslugi/zakazat,Заказать услугу,заказ консультация
+url,title,keywords,description,cta
+https://example.ru/uslugi/sertifikaciya,Сертификация,сертификат гост р соответствие,Оформление сертификата соответствия на продукцию: подбор схемы и сопровождение до получения документа,yes
+https://example.ru/uslugi/deklaraciya,Декларирование,декларация соответствие тр тс,Регистрация документа о соответствии продукции требованиям технических регламентов,yes
+https://example.ru/uslugi/tu,Разработка ТУ,технические условия ту пищевая продукция,Разработка технических условий на продукцию с учётом рецептуры и ГОСТ,yes
+https://example.ru/blog/,Блог,статьи новости,,

@@ -67,8 +67,7 @@ nano .env
 
 - **Секреты:** `OPENAI_API_KEY`, `FTP_HOST`, `FTP_USER`, `FTP_PASS`. В чат и в репозиторий
   их не отправляйте.
-- **Сайт:** `SEO_SITE_URL`, `SEO_SITE_NAME`, `SEO_CTA_URL` (страница услуги для CTA),
-  `SEO_CTA_CONTACT`, `SEO_FTP_DIR` (папка сайта на сервере, например `/domain.ru/public_html`).
+- **Сайт:** `SEO_SITE_URL`, `SEO_SITE_NAME`, `SEO_FTP_DIR` (папка сайта на сервере, например `/domain.ru/public_html`).
 - **Объём и качество:** `SEO_DAILY_LIMIT`, `SEO_MIN_CHARS`, лимиты ссылок и ключей.
   Каждая переменная `SEO_<ПАРАМЕТР>` перекрывает одноимённое значение в `config.json`.
   Пустая строка означает «взять из `config.json` или значение по умолчанию».
@@ -77,7 +76,10 @@ nano .env
 
 Остальные файлы:
 
-1. **`context/pages.csv`:** страницы сайта для перелинковки.
+1. **`context/pages.csv`:** страницы сайта (`url,title,keywords,description,cta`). Из них берутся ссылки для
+   перелинковки. Страницы услуг помечайте `cta=yes` и пишите для них `description`: агент выберет ближайшую
+   по теме услугу, опишет её в финальном CTA по вашему описанию и поставит ссылку. URL, телефон и регалии
+   вводить не нужно.
 2. **`context/facts.md`:** единственный источник цен, имён и сроков.
 3. **`state/queue.csv`:** очередь запросов.
 4. Проверка ключа: `python3 scripts/openai_client.py check`.

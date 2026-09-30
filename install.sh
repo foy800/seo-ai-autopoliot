@@ -36,9 +36,9 @@ cat <<EOF
 
 Дальше:
   1. Откройте .env (nano .env): впишите OPENAI_API_KEY, FTP_HOST, FTP_USER, FTP_PASS
-     и параметры сайта SEO_SITE_URL, SEO_SITE_NAME, SEO_CTA_URL, SEO_FTP_DIR.
+     и параметры сайта SEO_SITE_URL, SEO_SITE_NAME, SEO_FTP_DIR.
      Ключи и пароли никому не отправляйте.
-  2. Заполните context/pages.csv, context/facts.md и очередь state/queue.csv.
+  2. Заполните context/pages.csv (услуги пометьте cta=yes, добавьте описание), context/facts.md и очередь state/queue.csv.
   3. (Необязательно) config.json: те же параметры, если не хотите держать их в .env.
   4. Проверьте ключ:      python3 scripts/openai_client.py check
   5. Первая статья:       python3 scripts/pipeline.py --count 1

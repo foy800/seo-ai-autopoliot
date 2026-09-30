@@ -253,6 +253,9 @@ def check(md, meta, keyword, secondary, cfg, allowed_urls,
             errors.append(f"CTA ведёт не на {cfg['cta_url']}")
         if not CTA_VERB_RE.search(last):
             errors.append("в финале нет призыва к действию (запишитесь, позвоните, обратитесь)")
+        cta_words = {w for w in stems(cfg.get("cta_title", "")) if len(w) >= 4}
+        if cta_words and not (cta_words & set(stems(last))):
+            errors.append(f"в финальном абзаце не описана услуга «{cfg['cta_title']}»")
 
     # Структура: вступление, вывод, врезки, списки
     first_p = next(

@@ -13,7 +13,8 @@ class MockWriter:
         s1 = sec[0] if sec else "детали"
         s2 = sec[1] if len(sec) > 1 else s1
         l1, l2, l3 = (lsi + ["требования", "сроки", "документы"])[:3]
-        cta = re.search(r"CTA \(обязательна.*?\): (\S+)", user).group(1)
+        cta_line = re.search(r"финального CTA: (.+)", user).group(1)
+        cta, cta_title, cta_desc = [x.strip() for x in cta_line.split(" | ", 2)]
         block = user.split("Страницы для внутренних ссылок")[1]
         urls = re.findall(r"^- (\S+) \|", block, re.M)
         a = urls[0] if urls else "/"
@@ -63,7 +64,8 @@ class MockWriter:
             "## Вывод\n\n"
             "Результат зависит от исходных данных и определяется после уточнения задачи. "
             "Точный план и сроки называют только после обсуждения деталей.\n\n"
-            f"Нужна оценка вашего случая? Запишитесь на [консультацию]({cta}), специалист ответит на вопросы.\n"
+            f"Услуга «{cta_title}»: {cta_desc[:1].lower() + cta_desc[1:]}. "
+            f"Запишитесь на [консультацию по услуге]({cta}), чтобы обсудить ваш случай.\n"
         )
 
     def image(self, scene, out):

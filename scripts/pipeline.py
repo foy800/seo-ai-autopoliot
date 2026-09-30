@@ -86,6 +86,19 @@ def pick_link_candidates(pages, keyword, secondary, cfg, limit=8):
     return [p for _, p in scored[:limit]]
 
 
+def pick_cta(pages, keyword, secondary):
+    """Страница услуги для CTA: среди страниц с cta=yes (или всех) ближайшая по словам к теме."""
+    flagged = [p for p in pages if str(p.get("cta", "")).strip().lower() in ("1", "yes", "true", "да", "y")]
+    pool = flagged or pages
+    q = set(stems(" ".join([keyword] + secondary)))
+
+    def score(p):
+        text = " ".join(str(p.get(k) or "") for k in ("title", "keywords", "description"))
+        return len(q & set(stems(text)))
+
+    return max(pool, key=score, default=None)
+
+
 # ---------- промпты ----------
 def system_prompt(cfg):
     rules = read_text("references/humanizer-rules.md")
@@ -114,9 +127,11 @@ def user_prompt(row, cfg, facts, cands, past_titles, errors=None, previous=None)
         f"Тема и интент: {row.get('topic') or 'определи по ключу'}",
         f"Регион: {cfg.get('region') or 'не указан'}",
         f"Объём: не меньше {cfg['min_chars']} знаков с пробелами, цель около {cfg['target_chars']}.",
-        f"Автор: {cfg.get('author') or 'не указан, строку автора не добавляй'}",
-        f"Ссылка на услугу для финального CTA (обязательна в последнем абзаце): {cfg.get('cta_url')}",
-        f"Контакт для CTA: {cfg.get('cta_contact') or 'не указан'}",
+        f"Страница услуги для финального CTA: {cfg.get('cta_url')} | {cfg.get('cta_title')} | "
+        f"{cfg.get('cta_description') or 'описание не задано, опиши услугу только по названию'}",
+        "Финальный абзац (CTA): 2-3 предложения. Опиши услугу «" + str(cfg.get("cta_title")) + "» по описанию выше, "
+        "без выдуманных фактов, призови к действию и поставь ссылку на эту страницу. "
+        "Телефон, адрес, имена и регалии не указывай.",
         "Страницы для внутренних ссылок (бери только отсюда, "
         f"{cfg['min_internal_links']}-{cfg['max_internal_links']} штук, у каждой свой анкор):\n" + links,
         "Уже опубликованные заголовки (не повторяй темы):\n" + ("\n".join(f"- {t}" for t in past_titles[-30:]) or "нет"),
@@ -171,6 +186,10 @@ def produce(row, cfg, writer, facts, pages, past_titles):
     lsi = [s.strip() for s in row["lsi"].split(",") if s.strip()]
     kind = (row["kind"] or "info").strip().lower()
     max_chars = int(row["max_chars"]) if str(row["max_chars"]).isdigit() else 0
+    cta = pick_cta(pages, row["keyword"], sec)
+    if not cta:
+        raise RuntimeError("нет страниц в context/pages.csv: не из чего выбрать услугу для CTA")
+    cfg = dict(cfg, cta_url=cta["url"], cta_title=cta.get("title", ""), cta_description=cta.get("description", ""))
     allowed = {p["url"] for p in pages} | ({cfg["cta_url"]} if cfg.get("cta_url") else set())
     cands = pick_link_candidates(pages, row["keyword"], sec, cfg)
     system = system_prompt(cfg)
