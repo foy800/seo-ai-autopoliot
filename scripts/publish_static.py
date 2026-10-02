@@ -226,9 +226,6 @@ def publish(cfg, md_path, image_path, slug, date, meta=None):
     h1 = (re.search(r"^#\s+(.+)$", body, re.M) or [None, slug])[1]
     reg = [r for r in reg if r["slug"] != slug] + [
         {"slug": slug, "title": h1, "description": meta.get("META_DESCRIPTION", ""), "date": date}]
-    os.makedirs(os.path.dirname(reg_path), exist_ok=True)
-    with open(reg_path, "w", encoding="utf-8") as f:
-        json.dump(reg, f, ensure_ascii=False, indent=2)
 
     sitemap = os.path.join(site_dir, blog_rel, "sitemap-blog.xml")
     with open(sitemap, "w", encoding="utf-8") as f:
@@ -242,6 +239,10 @@ def publish(cfg, md_path, image_path, slug, date, meta=None):
 
     if cfg.get("publish_mode") == "ftp":
         ftp_upload(files, cfg)
+    # реестр сохраняем только после успешной загрузки: сбой FTP не должен вносить статью в список блога
+    os.makedirs(os.path.dirname(reg_path), exist_ok=True)
+    with open(reg_path, "w", encoding="utf-8") as f:
+        json.dump(reg, f, ensure_ascii=False, indent=2)
     return site_root(cfg) + blog_url(cfg, slug) + "/"
 
 

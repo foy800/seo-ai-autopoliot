@@ -20,6 +20,12 @@ copy_if_missing templates/pages.example.csv context/pages.csv
 copy_if_missing templates/facts.example.md context/facts.md
 chmod 600 .env
 
+python3 -c 'import openpyxl' 2>/dev/null || {
+  echo "ставлю openpyxl (нужен для Excel)..."
+  python3 -m pip install --user openpyxl >/dev/null 2>&1 || python3 -m pip install openpyxl >/dev/null 2>&1 \
+    || echo "Не удалось поставить openpyxl автоматически. Выполните: pip install openpyxl"
+}
+
 python3 - <<'PY' && echo "скрипты в порядке" || { echo "ошибка в скриптах"; exit 1; }
 import ast, glob
 for f in glob.glob("scripts/*.py"):
@@ -38,9 +44,10 @@ cat <<EOF
   1. Откройте .env (nano .env): впишите OPENAI_API_KEY, FTP_HOST, FTP_USER, FTP_PASS
      и параметры сайта SEO_SITE_URL, SEO_SITE_NAME, SEO_FTP_DIR.
      Ключи и пароли никому не отправляйте.
-  2. Заполните context/pages.csv (услуги пометьте cta=yes, добавьте описание), context/facts.md и очередь state/queue.csv.
+  2. Заполните context/pages.csv (услуги пометьте cta=yes, добавьте описание), context/facts.md и запросы (в content-plan.xlsx или state/queue.csv).
   3. (Необязательно) config.json: те же параметры, если не хотите держать их в .env.
   4. Проверьте ключ:      python3 scripts/openai_client.py check
-  5. Первая статья:       python3 scripts/pipeline.py --count 1
+  5. Создать таблицу:     python3 scripts/pipeline.py   (появится content-plan.xlsx с заголовками)
+     Откройте её, поставьте «да» в колонке «Одобрено» у нужных статей и запустите снова.
   6. Автозапуск:          bash install.sh --cron
 EOF

@@ -7,7 +7,11 @@ class MockWriter:
     def write(self, system, user):
         if user.startswith("Отредактируй статью"):
             return user.split("\n\n", 1)[1]  # вычитка: вернуть черновик как есть
+        if user.startswith("Придумай заголовок"):
+            k = re.search(r"Ключ: (.+)", user).group(1).strip()
+            return k[:1].upper() + k[1:] + ": что важно знать"
         kw = re.search(r"Основной ключ: (.+)", user).group(1).strip()
+        h1 = re.search(r"Заголовок H1 \(одобрен[^)]*\): (.+)", user).group(1).strip()
         sec = [x.strip() for x in re.search(r"Дополнительные ключи: (.+)", user).group(1).split(",")]
         lsi = [x.strip() for x in re.search(r"LSI-слова[^:]*: (.+)", user).group(1).split(",")]
         s1 = sec[0] if sec else "детали"
@@ -27,7 +31,7 @@ class MockWriter:
             f"META_DESCRIPTION: {desc}\n"
             "IMAGE_SCENE: светлый офис с документами на столе\n"
             "IMAGE_ALT: рабочий стол с документами\n---\n"
-            f"# {K}: что важно знать заранее\n\n"
+            f"# {h1}\n\n"
             f"Тема «{kw}» вызывает много вопросов. "
             "Общий порядок понятен, но детали зависят от конкретного случая. "
             "Ниже разобраны варианты, сроки и типичные ошибки.\n\n"

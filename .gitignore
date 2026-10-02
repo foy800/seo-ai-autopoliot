@@ -10,3 +10,4 @@ out/*
 __pycache__/
 *.pyc
 state/published.json
+content-plan*.xlsx

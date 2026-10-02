@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Дневной конвейер SEO-агента: очередь -> статья -> проверка -> обложка -> выдача.
+"""Дневной конвейер SEO-агента: контент-план Excel -> одобрение -> статья -> проверка -> обложка -> публикация.
 
-  python3 pipeline.py                 # до daily_limit статей за сегодня
+  python3 pipeline.py                 # до daily_limit одобренных статей за сегодня
   python3 pipeline.py --count 1       # одна статья
   python3 pipeline.py --mock          # без OpenAI, для проверки конвейера
-  python3 pipeline.py --keyword "..." # конкретный запрос из очереди
+  python3 pipeline.py --keyword "..." # конкретный запрос из плана
 
+Контент-план: content-plan.xlsx в папке проекта (создаётся автоматически). Агент подбирает заголовки,
+вы ставите «да» в колонке «Одобрено», и только тогда статья пишется и публикуется.
 Пригоден для cron:  0 7 * * *  cd /path/seo-agent-ru && python3 scripts/pipeline.py
 """
 import argparse
@@ -20,32 +22,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from article_check import check, load_allowed, parse_article  # noqa: E402
 from common import ROOT, abspath, count_phrase, load_config, load_env, slugify, stems  # noqa: E402
-
-QUEUE_FIELDS = ["keyword", "secondary", "lsi", "kind", "max_chars", "topic", "priority",
-                "status", "slug", "date", "note"]
+from plan import Plan, is_approved  # noqa: E402
 
 
 # ---------- состояние ----------
-def read_queue(path):
-    if not os.path.exists(path):
-        return []
-    with open(path, encoding="utf-8", newline="") as f:
-        rows = list(csv.DictReader(f))
-    for r in rows:
-        for k in QUEUE_FIELDS:
-            r.setdefault(k, "")
-    return rows
-
-
-def write_queue(path, rows):
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=QUEUE_FIELDS, extrasaction="ignore")
-        w.writeheader()
-        w.writerows(rows)
-    os.replace(tmp, path)
-
-
 def log(event):
     os.makedirs(abspath("state"), exist_ok=True)
     event["ts"] = dt.datetime.now().isoformat(timespec="seconds")
@@ -99,6 +79,34 @@ def pick_cta(pages, keyword, secondary):
     return max(pool, key=score, default=None)
 
 
+# ---------- заголовки ----------
+def fallback_title(row):
+    kw = row["keyword"].strip()
+    base = kw[:1].upper() + kw[1:]
+    topic = (row.get("topic") or "").strip()
+    return f"{base}: {topic}" if topic else f"{base}: что важно знать"
+
+
+def propose_title(writer, row):
+    """Заголовок H1 для плана: через модель, с проверкой; при сбое запасной вариант."""
+    fb = fallback_title(row)
+    if writer is None:
+        return fb
+    prompt = (
+        f"Придумай заголовок H1 для SEO-статьи.\nКлюч: {row['keyword']}\n"
+        f"Тема: {row.get('topic') or 'по ключу'}\n"
+        "Требования: ключ в исходной форме, 40-80 знаков, информативно, без кликбейта, без вводных слов, "
+        "без тире и эмодзи. Верни одну строку с заголовком."
+    )
+    try:
+        t = writer.write("Ты редактор SEO-статей. Отвечаешь только заголовком.", prompt)
+        t = t.strip().splitlines()[0].strip().strip("«»\"'").strip()
+    except Exception:
+        return fb
+    ok = 15 <= len(t) <= 90 and count_phrase(stems(t), row["keyword"]) > 0 and "—" not in t and " - " not in t
+    return t if ok else fb
+
+
 # ---------- промпты ----------
 def system_prompt(cfg):
     rules = read_text("references/humanizer-rules.md")
@@ -119,6 +127,7 @@ def user_prompt(row, cfg, facts, cands, past_titles, errors=None, previous=None)
     sec = [s.strip() for s in row["secondary"].split(",") if s.strip()]
     links = "\n".join(f"- {p['url']} | {p.get('title', '')}" for p in cands) or "(список пуст)"
     parts = [
+        f"Заголовок H1 (одобрен, используй дословно): {row['title']}",
         f"Основной ключ: {kw}",
         f"Дополнительные ключи: {', '.join(sec) or 'нет'}",
         f"LSI-слова (впиши по теме, минимум половину): {row.get('lsi') or 'нет'}",
@@ -148,7 +157,7 @@ def humanize_prompt(draft):
     return (
         "Отредактируй статью по правилам против ИИ-слопа из системного сообщения. Удаляй, не дописывай. "
         "Заодно сделай корректуру: орфография, пунктуация, тавтология, лишние вводные слова. "
-        "Все числа, имена, названия, ссылки, таблицы, ключи в H1 и первом абзаце, служебные поля до строки --- "
+        "Все числа, имена, названия, ссылки, таблицы, заголовок H1, ключи в первом абзаце, служебные поля до строки --- "
         "и структуру заголовков сохрани без изменений. Не добавляй фактов. Верни файл целиком.\n\n" + draft
     )
 
@@ -164,6 +173,19 @@ class OpenAIWriter:
 
     def image(self, scene, out):
         return self.oc.image(scene, out)
+
+
+def make_writer(mock):
+    """Возвращает (writer, ошибка). Без ключа writer=None: заголовки берутся запасные, статьи не пишутся."""
+    if mock:
+        from mock_writer import MockWriter
+        return MockWriter(), None
+    try:
+        w = OpenAIWriter()
+        w.oc._key()
+        return w, None
+    except Exception as e:
+        return None, str(e)
 
 
 # ---------- шаги ----------
@@ -189,7 +211,8 @@ def produce(row, cfg, writer, facts, pages, past_titles):
     cta = pick_cta(pages, row["keyword"], sec)
     if not cta:
         raise RuntimeError("нет страниц в context/pages.csv: не из чего выбрать услугу для CTA")
-    cfg = dict(cfg, cta_url=cta["url"], cta_title=cta.get("title", ""), cta_description=cta.get("description", ""))
+    cfg = dict(cfg, cta_url=cta["url"], cta_title=cta.get("title", ""), cta_description=cta.get("description", ""),
+               h1_exact=row["title"])
     allowed = {p["url"] for p in pages} | ({cfg["cta_url"]} if cfg.get("cta_url") else set())
     cands = pick_link_candidates(pages, row["keyword"], sec, cfg)
     system = system_prompt(cfg)
@@ -215,7 +238,7 @@ def produce(row, cfg, writer, facts, pages, past_titles):
 
 
 def deliver(row, cfg, raw, meta, writer, slug):
-    """Сохраняет статью и обложку, вызывает publish_hook, если разрешено."""
+    """Сохраняет статью и обложку и публикует. Возвращает (статус, url, путь к .md, есть ли обложка)."""
     date = dt.date.today().isoformat()
     out_dir = abspath(cfg["out_dir"])
     os.makedirs(out_dir, exist_ok=True)
@@ -229,12 +252,13 @@ def deliver(row, cfg, raw, meta, writer, slug):
     except Exception as e:  # обложка не должна ронять статью
         log({"event": "image_failed", "keyword": row["keyword"], "error": str(e)[:300]})
         img_path = ""
-    return release(cfg, row["keyword"], md_path, img_path, slug, date, meta), md_path, img_path
+    status, url = release(cfg, row["keyword"], md_path, img_path, slug, date, meta)
+    return status, url, md_path, bool(img_path)
 
 
 def release(cfg, keyword, md_path, img_path, slug, date, meta):
     """Публикует статью: на сайт без CMS (publish_mode local/ftp) или через publish_hook.
-    Не вышло или способ не задан: статус ready, публикация повторится при следующем запуске."""
+    Возвращает (статус, url). Не вышло или способ не задан: «ready», публикация повторится при следующем запуске."""
     mode = (cfg.get("publish_mode") or "").strip().lower()
     if mode in ("local", "ftp"):
         from publish_static import publish
@@ -242,25 +266,32 @@ def release(cfg, keyword, md_path, img_path, slug, date, meta):
             url = publish(cfg, md_path, img_path, slug, date, meta)
         except Exception as e:
             log({"event": "publish_failed", "keyword": keyword, "mode": mode, "error": str(e)[:300]})
-            return "ready"
+            return "ready", ""
         log({"event": "site_published", "keyword": keyword, "mode": mode, "url": url})
-        return "published"
+        return "published", url
     hook = cfg.get("publish_hook", "").strip()
     if not hook:
-        return "ready"
+        return "ready", ""
     env = dict(os.environ, ARTICLE_MD=md_path, ARTICLE_IMAGE=img_path, ARTICLE_SLUG=slug,
                ARTICLE_TITLE=meta.get("META_TITLE", ""), ARTICLE_DESCRIPTION=meta.get("META_DESCRIPTION", ""),
                ARTICLE_IMAGE_ALT=meta.get("IMAGE_ALT", ""))
     r = subprocess.run(hook, shell=True, env=env, cwd=ROOT, capture_output=True, text=True, timeout=300)
     log({"event": "publish_hook", "keyword": keyword, "code": r.returncode, "stderr": r.stderr[-300:]})
-    return "published" if r.returncode == 0 else "ready"
+    return ("published" if r.returncode == 0 else "ready"), ""
 
 
-def retry_unpublished(cfg, rows, qpath):
+def mark_published(row, status, url):
+    row["status"] = status
+    if status == "published":
+        row["published_at"] = dt.date.today().isoformat()
+        row["url"] = url or row.get("url", "")
+
+
+def retry_unpublished(cfg, plan):
     """Повторяет публикацию статей со статусом ready (например, после сбоя FTP)."""
     if (cfg.get("publish_mode") or "").strip().lower() not in ("local", "ftp") and not cfg.get("publish_hook"):
         return
-    for row in rows:
+    for row in plan.rows:
         if row["status"] != "ready" or not row["slug"]:
             continue
         date = row["date"] or dt.date.today().isoformat()
@@ -268,9 +299,10 @@ def retry_unpublished(cfg, rows, qpath):
         if not os.path.exists(md_path):
             continue
         meta, _ = parse_article(open(md_path, encoding="utf-8").read())
-        row["status"] = release(cfg, row["keyword"], md_path, md_path[:-3] + ".png", row["slug"], date, meta)
-        write_queue(qpath, rows)
-        print(f"[повтор публикации: {row['status']}] {row['keyword']}")
+        status, url = release(cfg, row["keyword"], md_path, md_path[:-3] + ".png", row["slug"], date, meta)
+        mark_published(row, status, url)
+        plan.save()
+        print(f"[повтор публикации: {status}] {row['keyword']}")
 
 
 def main():
@@ -283,38 +315,61 @@ def main():
 
     load_env()
     cfg = load_config(a.config)
-    qpath = abspath(cfg["queue_path"])
-    rows = read_queue(qpath)
-    if not rows:
-        print(f"Очередь пуста или не найдена: {qpath}", file=sys.stderr)
+    try:
+        plan = Plan(cfg)
+    except RuntimeError as e:
+        print(f"Ошибка: {e}", file=sys.stderr)
+        return 2
+    added = plan.sync_csv(abspath(cfg["queue_path"]))
+    if not plan.rows:
+        plan.save()
+        print(f"Контент-план пуст. Добавьте запросы в {os.path.basename(plan.path)} (колонка «Основной ключ»).")
         return 1
 
-    retry_unpublished(cfg, rows, qpath)
+    writer, werr = make_writer(a.mock)
 
-    limit = cfg["daily_limit"] - done_today(rows)
+    # 1. Заголовки к новым запросам: человек видит их в таблице и решает, одобрять ли
+    titled = 0
+    for row in plan.rows:
+        if titled >= cfg["titles_per_run"]:
+            break
+        if not row["title"] and row["status"] in ("new", ""):
+            row["title"] = propose_title(writer, row)
+            titled += 1
+    plan.save()
+    if added or titled:
+        print(f"План обновлён: новых запросов {added}, подобрано заголовков {titled}. Файл: {plan.path}")
+
+    # 2. Повтор публикации того, что уже написано
+    retry_unpublished(cfg, plan)
+
+    # 3. Лимит и одобрение
+    limit = cfg["daily_limit"] - done_today(plan.rows)
     n = min(a.count if a.count is not None else limit, limit)
     if n <= 0:
         print(f"Дневной лимит ({cfg['daily_limit']}) уже выбран.")
         return 0
 
-    if a.mock:
-        from mock_writer import MockWriter
-        writer = MockWriter()
-    else:
-        try:
-            writer = OpenAIWriter()
-            writer.oc._key()
-        except Exception as e:
-            print(f"Ошибка: {e}", file=sys.stderr)
-            return 2
+    need_ok = cfg["require_approval"]
+    waiting = [r for r in plan.rows if r["status"] in ("new", "")]
+    pending = [r for r in waiting if is_approved(r["approved"]) or not need_ok]
+    if a.keyword:
+        pending = [r for r in pending if r["keyword"].strip().lower() == a.keyword.strip().lower()]
+    if not pending:
+        if waiting and need_ok:
+            print(f"Нет одобренных статей. Откройте {os.path.basename(plan.path)}, проверьте заголовки "
+                  f"и поставьте «да» в колонке «Одобрено» (ожидают: {len(waiting)}).")
+        else:
+            print("В плане нет статей для написания.")
+        return 0
+    if writer is None:
+        print(f"Ошибка: {werr}", file=sys.stderr)
+        return 2
 
     facts = read_text(cfg["facts_path"])
     pages = read_pages(cfg["pages_path"])
-    pending = [r for r in rows if r["status"] in ("new", "")]
-    if a.keyword:
-        pending = [r for r in pending if r["keyword"].strip().lower() == a.keyword.strip().lower()]
     pending.sort(key=lambda r: int(r["priority"]) if str(r["priority"]).isdigit() else 999)
-    past = [r["keyword"] for r in rows if r["status"] in ("published", "ready")]
+    past = [r["title"] or r["keyword"] for r in plan.rows if r["status"] in ("published", "ready")]
 
     made = 0
     for row in pending[:n]:
@@ -327,16 +382,19 @@ def main():
             log({"event": "failed", "keyword": row["keyword"], "errors": res["errors"]})
         else:
             slug = slugify(row["keyword"])
-            status, md, img = deliver(row, cfg, raw, meta, writer, slug)
-            row.update(status=status, slug=slug, date=dt.date.today().isoformat(),
-                       note=("без обложки" if not img else ""))
-            past.append(row["keyword"])
+            status, url, md, has_img = deliver(row, cfg, raw, meta, writer, slug)
+            h1 = re.search(r"^#\s+(.+)$", body, re.M)
+            row.update(slug=slug, date=dt.date.today().isoformat(), file=os.path.relpath(md, ROOT),
+                       title=h1.group(1).strip() if h1 else row["title"],
+                       note="" if has_img else "без обложки")
+            mark_published(row, status, url)
+            past.append(row["title"])
             made += 1
             log({"event": status, "keyword": row["keyword"], "file": md, "stats": res["stats"]})
             print(f"[{status}] {row['keyword']} -> {md}")
-        write_queue(qpath, rows)
+        plan.save()
 
-    print(f"Готово: {made} из {n}. Смотрите state/log.jsonl.")
+    print(f"Готово: {made} из {n}. Таблица: {plan.path}")
     return 0
 
 

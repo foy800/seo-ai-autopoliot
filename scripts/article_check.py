@@ -165,6 +165,8 @@ def check(md, meta, keyword, secondary, cfg, allowed_urls,
     h2s = re.findall(r"^##\s+(.+)$", md, re.M)
     if len(h1s) != 1:
         errors.append(f"H1 должен быть один, найдено {len(h1s)}")
+    elif cfg.get("h1_exact") and h1s[0].strip() != cfg["h1_exact"].strip():
+        errors.append(f"H1 должен совпадать с одобренным заголовком: «{cfg['h1_exact']}»")
     if len(h2s) < 3:
         errors.append(f"H2 нужно минимум 3, найдено {len(h2s)}")
     if re.search(r"^###\s", md, re.M) and not h2s:
