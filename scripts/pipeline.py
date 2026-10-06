@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from article_check import check, load_allowed, parse_article  # noqa: E402
 from common import ROOT, abspath, count_phrase, load_config, load_env, slugify, stems  # noqa: E402
 from plan import Plan, is_approved  # noqa: E402
+import sync_plan  # noqa: E402
 from gate import ApprovalError, require_approved  # noqa: E402
 from advisor import analyze as advise, read_pages as advisor_pages, write as advisor_write  # noqa: E402
 
@@ -335,6 +336,7 @@ def main():
 
     load_env()
     cfg = load_config(a.config)
+    sync_plan.pull(cfg)  # подтянуть ваши правки (в т.ч. «да») до любой работы
     try:
         plan = Plan(cfg)
     except RuntimeError as e:
@@ -400,6 +402,11 @@ def main():
 
     made = 0
     for row in pending[:n]:
+        # перед КАЖДОЙ статьёй заново смотрим ваш файл: «да» могли снять или поправить заголовок
+        sync_plan.pull(cfg, quiet=True, plan=plan)
+        if not is_approved(row["approved"]) or row["status"] not in ("new", ""):
+            print(f"[пропуск] {row['keyword']}: в вашем файле «да» снято или статус изменился")
+            continue
         try:
             require_approved(cfg, keyword=row["keyword"], plan=plan)
         except ApprovalError as e:
@@ -431,6 +438,7 @@ def main():
             print(f"[{status}] {row['keyword']} -> {md}")
         plan.save()
 
+    sync_plan.push_status(cfg)
     print(f"Готово: {made} из {n}. Таблица: {plan.path}")
     return 0
 
