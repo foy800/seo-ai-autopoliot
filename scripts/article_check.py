@@ -202,7 +202,9 @@ def check(md, meta, keyword, secondary, cfg, allowed_urls,
         n_words, hits = len(tokens(phrase)), count_phrase(st, phrase)
         cap = 5 if n_words <= 2 else (2 if n_words == 3 else 1)
         if hits > cap:
-            errors.append(f"ключ «{phrase}» ({n_words} сл.) встречается {hits} раз, максимум {cap}")
+            # Приоритет правила понижен: лимит повторов не блокирует статью (ключ из 4+ слов обязан стоять
+            # и в H1, и в первом абзаце, что само по себе превышает лимит «до 1»). Решение за человеком.
+            warnings.append(f"ключ «{phrase}» ({n_words} сл.) встречается {hits} раз, рекомендуемый максимум {cap}")
     sec_missing = [s for s in secondary if s and count_phrase(st, s) == 0]
     if secondary and len(sec_missing) > len([s for s in secondary if s]) / 2:
         errors.append("больше половины дополнительных ключей отсутствует: " + ", ".join(sec_missing))

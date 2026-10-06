@@ -26,7 +26,9 @@ SKIP = (".git", "out", "__pycache__", "state/log.jsonl", "state/cron.log")
 def need(name):
     v = os.environ.get(name, "").strip()
     if not v:
-        sys.exit(f"В .env не задано {name}. Заполните блок «Доступ к серверу (SSH)».")
+        sys.exit(f"Нужен сервер: в .env не задано {name}. Агент работает на сервере каждый день, без доступа к нему "
+                 "настройка не завершена. Заполните блок «Доступ к серверу (SSH)» (SSH_HOST, SSH_USER, SSH_KEY_PATH "
+                 "или SSH_PASS, SSH_REMOTE_DIR) и повторите.")
     return v
 
 
