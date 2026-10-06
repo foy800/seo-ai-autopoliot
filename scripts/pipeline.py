@@ -23,6 +23,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from article_check import check, load_allowed, parse_article  # noqa: E402
 from common import ROOT, abspath, count_phrase, load_config, load_env, slugify, stems  # noqa: E402
 from plan import Plan, is_approved  # noqa: E402
+from gate import ApprovalError, require_approved  # noqa: E402
+from advisor import analyze as advise, read_pages as advisor_pages, write as advisor_write  # noqa: E402
 
 
 # ---------- состояние ----------
@@ -128,6 +130,7 @@ def user_prompt(row, cfg, facts, cands, past_titles, errors=None, previous=None)
     links = "\n".join(f"- {p['url']} | {p.get('title', '')}" for p in cands) or "(список пуст)"
     parts = [
         f"Заголовок H1 (одобрен, используй дословно): {row['title']}",
+        "Ключи и заголовок заданы человеком: не заменяй, не добавляй и не убирай ключи самостоятельно. Если ключ не вписывается по смыслу, не втискивай его и не придумывай замену.",
         f"Основной ключ: {kw}",
         f"Дополнительные ключи: {', '.join(sec) or 'нет'}",
         f"LSI-слова (впиши по теме, минимум половину): {row.get('lsi') or 'нет'}",
@@ -237,6 +240,21 @@ def produce(row, cfg, writer, facts, pages, past_titles):
     return None, {}, "", res
 
 
+def advise_failure(errors):
+    """Превращает ошибки проверки в рекомендацию человеку. Ключи сам не меняет и не убирает."""
+    recs = []
+    for e in errors:
+        if "дополнительных ключей отсутствует" in e or "нет доп. ключей" in e:
+            recs.append("Рекомендуется убрать из доп. ключей те, что не вписываются по смыслу: " + e.split(":", 1)[-1].strip())
+        elif "максимум" in e and "встречается" in e:
+            recs.append("Ключ повторяется чаще допустимого: рекомендуется заменить длинный ключ более короткой формой или убрать его из доп. ключей. " + e)
+        elif "LSI" in e:
+            recs.append("Рекомендуется сократить список LSI-слов до тех, что подходят теме: " + e)
+        else:
+            recs.append(e)
+    return " | ".join(recs)[:800]
+
+
 def deliver(row, cfg, raw, meta, writer, slug):
     """Сохраняет статью и обложку и публикует. Возвращает (статус, url, путь к .md, есть ли обложка)."""
     date = dt.date.today().isoformat()
@@ -258,7 +276,9 @@ def deliver(row, cfg, raw, meta, writer, slug):
 
 def release(cfg, keyword, md_path, img_path, slug, date, meta):
     """Публикует статью: на сайт без CMS (publish_mode local/ftp) или через publish_hook.
-    Возвращает (статус, url). Не вышло или способ не задан: «ready», публикация повторится при следующем запуске."""
+    Возвращает (статус, url). Не вышло или способ не задан: «ready», публикация повторится при следующем запуске.
+    Перед публикацией всегда проверяется «да» в колонке «Одобрено»: без него публикация невозможна."""
+    require_approved(cfg, keyword=keyword)
     mode = (cfg.get("publish_mode") or "").strip().lower()
     if mode in ("local", "ftp"):
         from publish_static import publish
@@ -331,14 +351,21 @@ def main():
     # 1. Заголовки к новым запросам: человек видит их в таблице и решает, одобрять ли
     titled = 0
     for row in plan.rows:
-        if titled >= cfg["titles_per_run"]:
-            break
+        if cfg["titles_per_run"] and titled >= cfg["titles_per_run"]:
+            break  # 0 = без лимита: заголовок получает каждый ключ
         if not row["title"] and row["status"] in ("new", ""):
             row["title"] = propose_title(writer, row)
             titled += 1
     plan.save()
     if added or titled:
         print(f"План обновлён: новых запросов {added}, подобрано заголовков {titled}. Файл: {plan.path}")
+
+    # 1б. Советник: только предупреждения и рекомендации, ключи и заголовки не меняются
+    warns = advise(plan, advisor_pages(cfg))
+    advisor_write(plan, warns)
+    if warns:
+        print(f"Советник: предупреждений {len({(w['kind'], w['found']) for w in warns})} (лист «Предупреждения»). "
+              "Это рекомендации: решение принимаете вы.")
 
     # 2. Повтор публикации того, что уже написано
     retry_unpublished(cfg, plan)
@@ -350,13 +377,13 @@ def main():
         print(f"Дневной лимит ({cfg['daily_limit']}) уже выбран.")
         return 0
 
-    need_ok = cfg["require_approval"]
     waiting = [r for r in plan.rows if r["status"] in ("new", "")]
-    pending = [r for r in waiting if is_approved(r["approved"]) or not need_ok]
+    # Жёсткое правило: только строки с «да» от человека. Отключить нельзя.
+    pending = [r for r in waiting if is_approved(r["approved"])]
     if a.keyword:
         pending = [r for r in pending if r["keyword"].strip().lower() == a.keyword.strip().lower()]
     if not pending:
-        if waiting and need_ok:
+        if waiting:
             print(f"Нет одобренных статей. Откройте {os.path.basename(plan.path)}, проверьте заголовки "
                   f"и поставьте «да» в колонке «Одобрено» (ожидают: {len(waiting)}).")
         else:
@@ -374,11 +401,21 @@ def main():
     made = 0
     for row in pending[:n]:
         try:
+            require_approved(cfg, keyword=row["keyword"], plan=plan)
+        except ApprovalError as e:
+            print(f"[пропуск] {row['keyword']}: {e}")
+            continue
+        if row.get("warning"):
+            print(f"[внимание] {row['keyword']}: {row['warning'][:300]}")
+            print(f"   Рекомендация: {row.get('recommendation', '')[:300]}")
+            print("   Пишу, потому что вы поставили «да».")
+        try:
             raw, meta, body, res = produce(row, cfg, writer, facts, pages, past)
         except Exception as e:  # сеть или API: одна статья не должна ронять весь запуск
             raw, res = None, {"errors": [f"сбой генерации: {str(e)[:200]}"]}
         if raw is None:
             row["status"], row["note"] = "failed", "; ".join(res["errors"])[:300]
+            row["recommendation"] = advise_failure(res["errors"])
             log({"event": "failed", "keyword": row["keyword"], "errors": res["errors"]})
         else:
             slug = slugify(row["keyword"])

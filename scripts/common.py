@@ -36,8 +36,7 @@ DEFAULT_CONFIG = {
     "humanize_pass": True,
     "max_attempts": 3,
     "plan_path": "content-plan.xlsx",
-    "require_approval": True,
-    "titles_per_run": 30,
+    "titles_per_run": 0,  # 0 = подобрать заголовок к каждому ключу без заголовка
     "queue_path": "state/queue.csv",
     "pages_path": "context/pages.csv",
     "facts_path": "context/facts.md",

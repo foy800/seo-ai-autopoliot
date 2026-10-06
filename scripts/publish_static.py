@@ -24,6 +24,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from article_check import parse_article  # noqa: E402
 from common import abspath, load_config, load_env  # noqa: E402
+from gate import require_approved  # noqa: E402
 
 DEFAULT_TEMPLATE = "templates/page.template.html"
 
@@ -201,7 +202,9 @@ def ftp_upload(files, cfg):
 
 # ---------- главная функция ----------
 def publish(cfg, md_path, image_path, slug, date, meta=None):
-    """Собирает страницы и, если publish_mode == 'ftp', заливает их. Возвращает URL статьи."""
+    """Собирает страницы и, если publish_mode == 'ftp', заливает их. Возвращает URL статьи.
+    Без «да» в колонке «Одобрено» контент-плана бросает ApprovalError: публикация невозможна."""
+    require_approved(cfg, slug=slug)
     meta2, body = parse_article(open(md_path, encoding="utf-8").read())
     meta = meta or meta2
     site_dir = abspath(cfg.get("site_dir", "out/site"))
