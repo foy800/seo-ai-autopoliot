@@ -326,7 +326,39 @@ def retry_unpublished(cfg, plan):
         print(f"[повтор публикации: {status}] {row['keyword']}")
 
 
+LAST = {"created": 0, "published": 0, "failed": 0, "articles": [], "errors": []}
+
+
+def write_last_run(cfg_ok=True, pipeline_failed=False):
+    """Результат запуска в JSON для внешних потребителей (Telegram-бот): state/last_run.json."""
+    try:
+        cfg = load_config()
+        data = dict(LAST, project=(cfg.get("site_url") or "").replace("https://", "").replace("http://", "").strip("/"),
+                    date=dt.date.today().isoformat(), pipeline_failed=pipeline_failed,
+                    finished_at=dt.datetime.now().isoformat(timespec="seconds"))
+        path = abspath("state/last_run.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=1)
+    except Exception:
+        pass
+
+
 def main():
+    LAST.update(created=0, published=0, failed=0, articles=[], errors=[])
+    try:
+        code = _main()
+    except SystemExit:
+        write_last_run(pipeline_failed=True)
+        raise
+    except Exception:
+        write_last_run(pipeline_failed=True)
+        raise
+    write_last_run(pipeline_failed=code not in (0, 1))
+    return code
+
+
+def _main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--count", type=int, default=None)
     ap.add_argument("--keyword", default=None)
@@ -424,6 +456,8 @@ def main():
             row["status"], row["note"] = "failed", "; ".join(res["errors"])[:300]
             row["recommendation"] = advise_failure(res["errors"])
             log({"event": "failed", "keyword": row["keyword"], "errors": res["errors"]})
+            LAST["failed"] += 1
+            LAST["errors"].append(f"{row['keyword']}: {'; '.join(res['errors'])[:160]}")
         else:
             slug = slugify(row["keyword"])
             status, url, md, has_img = deliver(row, cfg, raw, meta, writer, slug)
@@ -434,6 +468,10 @@ def main():
             mark_published(row, status, url)
             past.append(row["title"])
             made += 1
+            LAST["created"] += 1
+            LAST["published"] += 1 if status == "published" else 0
+            LAST["articles"].append({"keyword": row["keyword"], "title": row["title"], "url": url or "",
+                                     "status": status})
             log({"event": status, "keyword": row["keyword"], "file": md, "stats": res["stats"]})
             print(f"[{status}] {row['keyword']} -> {md}")
         plan.save()
