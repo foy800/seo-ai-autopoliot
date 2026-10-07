@@ -34,7 +34,8 @@ DEFAULT_CONFIG = {
     "update_blog_index": True,
     "cta_url": "",
     "humanize_pass": True,
-    "max_attempts": 3,
+    "max_attempts": 8,  # попыток на статью за один запуск; ошибки проверки каждый раз передаются писателю
+    "max_failed_runs": 5,  # сколько запусков подряд повторять статью, не прошедшую проверку
     "plan_path": "content-plan.xlsx",
     "titles_per_run": 0,  # 0 = подобрать заголовок к каждому ключу без заголовка
     "queue_path": "state/queue.csv",
@@ -92,7 +93,7 @@ def abspath(p):
 
 def stem(word):
     """Грубая основа русского слова: хватает, чтобы ловить смену падежа."""
-    w = word.lower().replace("ё", "е")
+    w = word.lower().replace("ё", "е").replace("э", "е")  # ТЭНС = ТЕНС: написание не должно ломать проверку ключа
     n = len(w)
     if n <= 3:
         return w

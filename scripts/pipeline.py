@@ -241,6 +241,21 @@ def produce(row, cfg, writer, facts, pages, past_titles):
     return None, {}, "", res
 
 
+def failed_counts():
+    """Сколько раз каждый ключ не прошёл проверку (по state/log.jsonl)."""
+    out = {}
+    p = abspath("state/log.jsonl")
+    if os.path.exists(p):
+        for line in open(p, encoding="utf-8"):
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            if d.get("event") == "failed":
+                out[d.get("keyword", "")] = out.get(d.get("keyword", ""), 0) + 1
+    return out
+
+
 def advise_failure(errors):
     """Превращает ошибки проверки в рекомендацию человеку. Ключи сам не меняет и не убирает."""
     recs = []
@@ -411,7 +426,10 @@ def _main():
         print(f"Дневной лимит ({cfg['daily_limit']}) уже выбран.")
         return 0
 
-    waiting = [r for r in plan.rows if r["status"] in ("new", "")]
+    failed_runs = failed_counts()
+    # статья, не прошедшая проверку, берётся в работу снова при следующем запуске (до max_failed_runs раз)
+    retry = [r for r in plan.rows if r["status"] == "failed" and failed_runs.get(r["keyword"], 0) < cfg["max_failed_runs"]]
+    waiting = [r for r in plan.rows if r["status"] in ("new", "")] + retry
     # Жёсткое правило: только строки с «да» от человека. Отключить нельзя.
     pending = [r for r in waiting if is_approved(r["approved"])]
     if a.keyword:
@@ -436,7 +454,7 @@ def _main():
     for row in pending[:n]:
         # перед КАЖДОЙ статьёй заново смотрим ваш файл: «да» могли снять или поправить заголовок
         sync_plan.pull(cfg, quiet=True, plan=plan)
-        if not is_approved(row["approved"]) or row["status"] not in ("new", ""):
+        if not is_approved(row["approved"]) or row["status"] not in ("new", "", "failed"):
             print(f"[пропуск] {row['keyword']}: в вашем файле «да» снято или статус изменился")
             continue
         try:
