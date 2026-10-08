@@ -95,6 +95,47 @@ git clone https://github.com/foy800/seo-ai-autopoliot.git "$env:USERPROFILE\.cla
 
 Для проекта, а не для всех: клонируйте в `.claude/skills/seo-agent-ru` внутри папки проекта.
 
+## Подключить к Codex
+
+Формат `SKILL.md` у Codex (OpenAI Codex CLI, приложение, расширение для IDE) тот же, что у Claude Code, поэтому файлы скилла менять не нужно. Есть два способа.
+
+**Способ 1. Как скилл Codex (рекомендуется)**
+
+macOS / Linux / Git Bash:
+
+```bash
+git clone https://github.com/foy800/seo-ai-autopoliot.git ~/.agents/skills/seo-agent-ru
+```
+
+Windows (PowerShell):
+
+```powershell
+git clone https://github.com/foy800/seo-ai-autopoliot.git "$env:USERPROFILE\.agents\skills\seo-agent-ru"
+```
+
+Для одного проекта клонируйте в `<проект>/.agents/skills/seo-agent-ru`. В части версий Codex скиллы читаются из `~/.codex/skills/`: если после перезапуска скилл не виден, клонируйте туда. Перезапустите Codex и напишите `$seo-agent-ru` или «запусти SEO-агента». Список скиллов показывает команда `/skills`.
+
+**Способ 2. Через AGENTS.md (работает в любой версии)**
+
+В корне репозитория лежит готовый [AGENTS.md](AGENTS.md): он сообщает агенту, где правила (`SKILL.md`) и какие команды запускать. Откройте в Codex папку клонированного репозитория или добавьте в `AGENTS.md` своего проекта строку:
+
+```
+Для SEO-статей следуй инструкции из seo-agent-ru/SKILL.md и запускай seo-agent-ru/scripts/pipeline.py
+```
+
+**Первый запуск в Codex**
+
+1. Подготовьте файлы: `bash install.sh` (на Windows команды `python3 scripts/...` замените на `python scripts/...`).
+2. Впишите в `.env` ключ `OPENAI_API_KEY` и параметры сайта и FTP. Секреты вписывайте только в `.env` вручную и не отправляйте в чат Codex.
+3. Заполните `context/pages.csv`, `context/facts.md` и запросы, затем попросите Codex: «запусти SEO-агента». Агент создаст `content-plan.xlsx`.
+4. Откройте таблицу, поставьте «да» в колонке «Одобрено» и запустите снова. Без «да» статья не пишется и не публикуется, просьба в чате «да» не заменяет.
+
+**Важно для Codex**
+
+- Скриптам нужна сеть (OpenAI, FTP). В режиме песочницы `workspace-write` сеть по умолчанию выключена: включите её (`network_access = true` в разделе `sandbox_workspace_write` файла `~/.codex/config.toml`) или запускайте `python3 scripts/pipeline.py` в обычном терминале.
+- Для ежедневной работы Codex не нужен: после `bash install.sh --cron` агент работает на сервере сам.
+- Названия папок и настроек Codex могут меняться между версиями. Если что-то не совпало, сверьтесь с разделом Skills в документации Codex или используйте способ 2.
+
 ## Настройка
 
 Все секреты и параметры лежат в одном файле **`.env`** (шаблон `templates/.env.example`,
